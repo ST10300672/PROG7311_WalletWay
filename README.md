@@ -102,11 +102,11 @@ com.example.walletway
 
 ## Developer
 
-- **Student ID**: ST10300672  
+- **Student Members**: ST10300672: Brayden Pillay, ST10302369: Lethabo Penniston, ST10288560: Luke James Lutchmiah 
 - **Module**: PROG7313 - Programming 3C  
 - **Submission**: Part 2 – App Prototype  
 - **GitHub Repo**: [WalletWay Prototype](https://github.com/VCDN-2025/prog7313-part-2-ST10300672)
-- **YouTube Link**: 
+- **YouTube Link**: https://youtu.be/ZMbWNDCHyCE
 
 ---
 
