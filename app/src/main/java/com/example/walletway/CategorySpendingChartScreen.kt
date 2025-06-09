@@ -1,9 +1,18 @@
 package com.example.walletway
 
+import android.graphics.Bitmap
+import android.os.Environment
+import android.provider.MediaStore
+import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStream
 import android.app.DatePickerDialog
 import android.graphics.Color
 import android.view.ViewGroup
+import android.widget.LinearLayout
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -33,6 +42,7 @@ fun CategorySpendingChartScreen(
 
     var startDate by remember { mutableStateOf("") }
     var endDate by remember { mutableStateOf("") }
+    val exportResult = remember { mutableStateOf<String?>(null) }
 
     val calendar = Calendar.getInstance()
     val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -49,6 +59,7 @@ fun CategorySpendingChartScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         Text("Category Spending Chart", style = MaterialTheme.typography.h6)
         Spacer(Modifier.height(12.dp))
@@ -94,9 +105,7 @@ fun CategorySpendingChartScreen(
                     }
 
                     chartView.value?.apply {
-                        data = BarData(dataSets).apply {
-                            barWidth = 0.25f
-                        }
+                        data = BarData(dataSets).apply { barWidth = 0.25f }
 
                         xAxis.apply {
                             valueFormatter = IndexAxisValueFormatter(sortedDates)
@@ -137,9 +146,9 @@ fun CategorySpendingChartScreen(
                             isEnabled = true
                             textSize = 12f
                             form = Legend.LegendForm.SQUARE
-                            orientation = Legend.LegendOrientation.VERTICAL
-                            verticalAlignment = Legend.LegendVerticalAlignment.TOP
-                            horizontalAlignment = Legend.LegendHorizontalAlignment.RIGHT
+                            orientation = Legend.LegendOrientation.HORIZONTAL
+                            verticalAlignment = Legend.LegendVerticalAlignment.BOTTOM
+                            horizontalAlignment = Legend.LegendHorizontalAlignment.CENTER
                             setDrawInside(false)
                             yEntrySpace = 10f
                         }
@@ -159,9 +168,9 @@ fun CategorySpendingChartScreen(
         AndroidView(
             factory = { ctx ->
                 BarChart(ctx).apply {
-                    layoutParams = ViewGroup.LayoutParams(
+                    layoutParams = LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
-                        600
+                        850 // Larger height for both screen view and export
                     )
                     chartView.value = this
                     description.isEnabled = false
@@ -170,10 +179,59 @@ fun CategorySpendingChartScreen(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(360.dp)
+                .height(450.dp) // Larger height on screen
         )
 
         Spacer(Modifier.height(16.dp))
+
+        Button(onClick = {
+            chartView.value?.let { chart ->
+                val now = System.currentTimeMillis()
+                val fileName = "spending_chart_$now.png"
+
+                // 1. Create bitmap
+                val bitmap = chart.chartBitmap
+
+                // 2. Save to Pictures using MediaStore
+                val contentValues = android.content.ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/WalletWay")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+
+                val contentResolver = context.contentResolver
+                val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+
+                if (uri != null) {
+                    try {
+                        contentResolver.openOutputStream(uri)?.use { outputStream ->
+                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                        } ?: run {
+                            exportResult.value = "❌ Failed to open output stream"
+                            return@let
+                        }
+                        contentValues.clear()
+                        contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+                        contentResolver.update(uri, contentValues, null, null)
+                        exportResult.value = "✅ Chart exported to Pictures/WalletWay as $fileName"
+                    } catch (e: Exception) {
+                        exportResult.value = "❌ Export failed: ${e.localizedMessage}"
+                    }
+                } else {
+                    exportResult.value = "❌ Failed to create file in MediaStore"
+                }
+            }
+        }, modifier = Modifier.fillMaxWidth()) {
+            Text("Export Chart as Image")
+        }
+
+        exportResult.value?.let {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(it, style = MaterialTheme.typography.body2, color = MaterialTheme.colors.primary)
+        }
+
+        Spacer(Modifier.height(24.dp))
 
         Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text("Back")
