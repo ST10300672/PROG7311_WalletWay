@@ -1,6 +1,6 @@
 # WalletWay
 
-WalletWay is a personal budgeting Android application developed as a prototype for PROG7313 Part 2. The app enables users to manage their daily expenses, set financial goals, and analyze their spending habits through a simple and intuitive interface.
+WalletWay is a personal budgeting Android application developed for our final POE project. The app enables users to manage their daily expenses, set financial goals, and analyze their spending habits through a simple and intuitive interface.
 
 ---
 
@@ -121,9 +121,9 @@ com.example.walletway
 - **Module**: PROG7313 - Programming 3C  
 - **Submission**: Part 2 – App Prototype
 
-- **GitHub Repo**: [WalletWay Final](https://github.com/VCDN-2025/prog7313-part-2-ST10300672)
-- **YouTube Demo**: 
-
+- **GitHub Repo**: [Wallet Way Final](https://github.com/ST10300672/PROG7311_WalletWay.git)
+- **YouTube Demo**: [Youtube Demo](https://youtu.be/5qsFBbtmg9s?si=jbj17FPmWFzd5Pw0)
+- **FireBase Console**: [FireBase Console](https://console.firebase.google.com/project/walletway-2c665/firestore/databases/-default-/data/~2Fcategories~2F01b52aad-562d-4b59-b4cb-1a767370416d)
 ---
 
 
