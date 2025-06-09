@@ -14,7 +14,8 @@ enum class ScreenState {
     CATEGORY,
     GOAL,
     EXPENSE_LIST,
-    CATEGORY_SUMMARY
+    CATEGORY_SUMMARY,
+    CATEGORY_SPENDING_CHART
 }
 
 class MainActivity : ComponentActivity() {
@@ -49,30 +50,37 @@ class MainActivity : ComponentActivity() {
                             onManageGoals = { currentScreen = ScreenState.GOAL },
                             onManageExpenses = { currentScreen = ScreenState.EXPENSE_LIST },
                             onViewCategorySummary = { currentScreen = ScreenState.CATEGORY_SUMMARY },
-                            reloadFlag = reloadFlag
+                            reloadFlag = reloadFlag,
+                            onNavigateToCategoryChart = { currentScreen = ScreenState.CATEGORY_SPENDING_CHART }
                         )
 
                         ScreenState.CATEGORY -> CategoryScreen(
-                            database = database,
+                            userEmail = user!!.email ?: "User",
                             onBack = { currentScreen = ScreenState.BUDGET }
                         )
 
                         ScreenState.GOAL -> GoalScreen(
-                            database = database,
+                            userEmail = user!!.email ?: "User",
                             onBack = { currentScreen = ScreenState.BUDGET },
                             onReload = { reloadFlag = !reloadFlag }
                         )
 
                         ScreenState.EXPENSE_LIST -> ExpenseListScreen(
-                            database = database,
+                            userEmail = user!!.email ?: "User",
                             onBack = { currentScreen = ScreenState.BUDGET },
                             reloadFlag = reloadFlag
                         )
 
                         ScreenState.CATEGORY_SUMMARY -> CategorySummaryScreen(
-                            database = database,
+                            userEmail = user!!.email ?: "User",
                             onBack = { currentScreen = ScreenState.BUDGET }
                         )
+
+                        ScreenState.CATEGORY_SPENDING_CHART -> CategorySpendingChartScreen(
+                            userEmail = user!!.email ?: "User",
+                            onBack = { currentScreen = ScreenState.BUDGET }
+                        )
+
                     }
                 } else {
                     AuthScreen(

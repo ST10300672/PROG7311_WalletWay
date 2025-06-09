@@ -16,9 +16,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.util.Calendar
+import java.util.*
 
 @Composable
 fun BudgetScreen(
@@ -29,7 +31,8 @@ fun BudgetScreen(
     onManageGoals: () -> Unit,
     onManageExpenses: () -> Unit,
     reloadFlag: Boolean,
-    onViewCategorySummary: () -> Unit
+    onViewCategorySummary: () -> Unit,
+    onNavigateToCategoryChart: () -> Unit
 ) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
@@ -42,19 +45,31 @@ fun BudgetScreen(
     val selectedPhotoPath = remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(reloadFlag) {
-        val dbExpenses = database.expenseDao().getAllExpenses()
+        val firestoreService = FirestoreService()
+        val dbExpenses = firestoreService.getAllExpensesForUser(userEmail)
         expenses.clear()
-        expenses.addAll(dbExpenses)
+        expenses.addAll(dbExpenses.map {
+            ExpenseEntity(
+                id = it.id,
+                description = it.description,
+                amount = it.amount,
+                category = it.category,
+                date = it.date,
+                photoPath = it.photoPath
+            )
+        })
 
-        val dbCategories = database.categoryDao().getAllCategories()
+
+        val firestoreCategoryService = FirestoreCategoryService()
+        val dbCategories = firestoreCategoryService.getCategoriesForUser(userEmail)
         categories.clear()
         categories.addAll(dbCategories)
 
-        val goal = database.goalDao().getGoal()
+        val goalService = FirestoreGoalService()
+        val goal = goalService.getGoalForUser(userEmail)
         minGoal = goal?.minGoal
         maxGoal = goal?.maxGoal
     }
@@ -84,9 +99,7 @@ fun BudgetScreen(
         )
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { paddingValues ->
+    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { paddingValues ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -100,23 +113,49 @@ fun BudgetScreen(
                 Text(
                     text = "Total Spent: R$total",
                     style = MaterialTheme.typography.subtitle1.copy(
-                        color = if (overspent) MaterialTheme.colors.error else MaterialTheme.colors.onBackground
+                        color = when {
+                            maxGoal != null && total > maxGoal!! -> MaterialTheme.colors.error
+                            minGoal != null && total < minGoal!! -> Color.Gray
+                            else -> MaterialTheme.colors.onBackground
+                        }
                     )
                 )
 
-                if (maxGoal != null) {
-                    val progress = (total / maxGoal!!).toFloat().coerceIn(0f, 1f)
-                    Spacer(modifier = Modifier.height(8.dp))
+                if (minGoal != null || maxGoal != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    val goalInfo = buildString {
+                        if (minGoal != null) append("Min: R${minGoal!!.toInt()} ")
+                        if (maxGoal != null) append("Max: R${maxGoal!!.toInt()}")
+                    }
+                    Text(goalInfo, style = MaterialTheme.typography.caption)
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Progress relative to maxGoal if available, else fallback to dummy 1f
+                    val progress = when {
+                        maxGoal != null -> (total / maxGoal!!).toFloat().coerceIn(0f, 1f)
+                        else -> 1f
+                    }
+
+                    val barColor = when {
+                        maxGoal != null && total > maxGoal!! -> Color.Red
+                        minGoal != null && total < minGoal!! -> Color.Gray
+                        else -> MaterialTheme.colors.primary
+                    }
+
                     LinearProgressIndicator(
                         progress = progress,
-                        color = if (overspent) Color.Red else MaterialTheme.colors.primary,
+                        color = barColor,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
                     )
                 }
+                
 
                 Spacer(modifier = Modifier.height(16.dp))
+
 
                 Card(elevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -211,6 +250,7 @@ fun BudgetScreen(
                                 }
 
                                 val newExpense = ExpenseEntity(
+                                    id = UUID.randomUUID().toString(),
                                     description = description,
                                     amount = expenseAmount,
                                     category = selectedCategory.value?.name ?: "Uncategorized",
@@ -218,10 +258,30 @@ fun BudgetScreen(
                                     photoPath = selectedPhotoPath.value
                                 )
 
-                                scope.launch(Dispatchers.IO) {
-                                    database.expenseDao().insertExpense(newExpense)
-                                    expenses.add(newExpense)
-                                }
+                                val expenseMap = hashMapOf(
+                                    "id" to newExpense.id,
+                                    "userEmail" to userEmail,
+                                    "description" to newExpense.description,
+                                    "amount" to newExpense.amount,
+                                    "category" to newExpense.category,
+                                    "date" to newExpense.date,
+                                    "photoPath" to newExpense.photoPath
+                                )
+
+                                Firebase.firestore.collection("expenses")
+                                    .document(newExpense.id)
+                                    .set(expenseMap)
+                                    .addOnSuccessListener {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Expense added to Firestore.")
+                                            expenses.add(newExpense)
+                                        }
+                                    }
+                                    .addOnFailureListener { e ->
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Error adding expense: ${e.localizedMessage}")
+                                        }
+                                    }
 
                                 description = ""
                                 amount = ""
@@ -254,10 +314,12 @@ fun BudgetScreen(
                     Button(onClick = onViewCategorySummary, modifier = Modifier.fillMaxWidth()) {
                         Text("View Category Spending Summary")
                     }
+                    Button(onClick = onNavigateToCategoryChart, modifier = Modifier.fillMaxWidth()) {
+                        Text("View Category Spending Graph")
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-
                 Text("Recent Expenses", style = MaterialTheme.typography.subtitle1)
             }
 

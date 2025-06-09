@@ -11,20 +11,23 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun GoalScreen(
-    database: AppDatabase,
+    userEmail: String,
     onBack: () -> Unit,
-    onReload: () -> Unit // ✅ ADD THIS
-)
- {
+    onReload: () -> Unit
+) {
     var minGoal by remember { mutableStateOf("") }
     var maxGoal by remember { mutableStateOf("") }
+
+    val firestoreGoalService = remember { FirestoreGoalService() }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        val goal = database.goalDao().getGoal()
-        goal?.let {
-            minGoal = it.minGoal.toString()
-            maxGoal = it.maxGoal.toString()
+        scope.launch(Dispatchers.IO) {
+            val goal = firestoreGoalService.getGoalForUser(userEmail)
+            goal?.let {
+                minGoal = it.minGoal.toString()
+                maxGoal = it.maxGoal.toString()
+            }
         }
     }
 
@@ -36,7 +39,6 @@ fun GoalScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(text = "Set Monthly Goals", style = MaterialTheme.typography.h5)
-
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
@@ -61,17 +63,19 @@ fun GoalScreen(
             onClick = {
                 val min = minGoal.toDoubleOrNull() ?: 0.0
                 val max = maxGoal.toDoubleOrNull() ?: 0.0
+                val newGoal = GoalEntity(min, max)
+
                 scope.launch(Dispatchers.IO) {
-                    database.goalDao().insertGoal(GoalEntity(min, max))
+                    firestoreGoalService.setGoalForUser(userEmail, newGoal)
                 }
-                onReload() // ✅ CALL this instead of reloadFlag = !reloadFlag
+
+                onReload()
                 onBack()
             },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Save Goals")
         }
-
 
         Spacer(modifier = Modifier.height(32.dp))
 

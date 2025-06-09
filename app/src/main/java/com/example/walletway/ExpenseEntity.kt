@@ -5,10 +5,10 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "expenses")
 data class ExpenseEntity(
+    @PrimaryKey val id: String,
     val description: String,
     val amount: Double,
     val category: String,
     val date: String,
-    val photoPath: String? = null,
-    @PrimaryKey(autoGenerate = true) val id: Int = 0
+    val photoPath: String? = null
 )

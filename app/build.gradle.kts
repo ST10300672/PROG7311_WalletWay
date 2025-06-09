@@ -44,6 +44,9 @@ android {
 
 dependencies {
 
+    implementation("com.google.firebase:firebase-firestore-ktx")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.6.4")
+    implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
     implementation("androidx.room:room-runtime:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
@@ -55,6 +58,9 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation("androidx.compose.material:material:1.6.1")
+    implementation("androidx.compose.foundation:foundation:1.6.1")
+    implementation("androidx.compose.ui:ui:1.6.1")
     implementation ("io.coil-kt:coil-compose:2.2.2")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("androidx.compose.material:material:1.6.1")
@@ -71,4 +77,6 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
 
 
-    }
+
+
+}

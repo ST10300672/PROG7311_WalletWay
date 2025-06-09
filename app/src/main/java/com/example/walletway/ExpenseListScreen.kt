@@ -15,50 +15,38 @@ import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.collections.map
 
 @Composable
 fun ExpenseListScreen(
-    database: AppDatabase,
+    userEmail: String,
     onBack: () -> Unit,
     reloadFlag: Boolean
 ) {
     val context = LocalContext.current
-    val expenses = remember { mutableStateListOf<ExpenseEntity>() }
-    val allExpenses = remember { mutableStateListOf<ExpenseEntity>() }
-    val categories = remember { mutableStateListOf<CategoryEntity>() }
-    val selectedCategory = remember { mutableStateOf<CategoryEntity?>(null) }
+    val expenses = remember { mutableStateListOf<Expense>() }
+    val allExpenses = remember { mutableStateListOf<Expense>() }
+    val categories = remember { mutableStateListOf<String>() }
+    val selectedCategory = remember { mutableStateOf<String?>(null) }
 
     var startDate by remember { mutableStateOf("") }
     var endDate by remember { mutableStateOf("") }
     var categoryExpanded by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
-    var selectedExpense by remember { mutableStateOf<ExpenseEntity?>(null) }
+    var selectedExpense by remember { mutableStateOf<Expense?>(null) }
     var newDescription by remember { mutableStateOf("") }
     var newAmount by remember { mutableStateOf("") }
     var fullImagePath by remember { mutableStateOf<String?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    var expenseToDelete by remember { mutableStateOf<ExpenseEntity?>(null) }
+    var expenseToDelete by remember { mutableStateOf<Expense?>(null) }
 
     val scope = rememberCoroutineScope()
+    val firestoreService = remember { FirestoreService() }
 
-    // Load expenses and categories
-    LaunchedEffect(reloadFlag) {
-        val dbExpenses = database.expenseDao().getAllExpenses()
-        allExpenses.clear()
-        allExpenses.addAll(dbExpenses)
-        expenses.clear()
-        expenses.addAll(dbExpenses)
-
-        val dbCategories = database.categoryDao().getAllCategories()
-        categories.clear()
-        categories.addAll(dbCategories)
-    }
-
-    val calendar = Calendar.getInstance()
     val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    val calendar = Calendar.getInstance()
 
     val startDatePicker = remember {
         DatePickerDialog(
@@ -86,6 +74,17 @@ fun ExpenseListScreen(
         )
     }
 
+    LaunchedEffect(reloadFlag) {
+        val all: List<Expense> = firestoreService.getAllExpensesForUser(userEmail)
+        allExpenses.clear()
+        allExpenses.addAll(all)
+        expenses.clear()
+        expenses.addAll(all)
+        categories.clear()
+        categories.addAll(all.map { it.category }.distinct())
+
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -96,10 +95,10 @@ fun ExpenseListScreen(
             Text("Expense List", style = MaterialTheme.typography.h5)
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Category Filter Dropdown
+            // Category dropdown
             Box(modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
-                    value = selectedCategory.value?.name ?: "",
+                    value = selectedCategory.value ?: "",
                     onValueChange = {},
                     label = { Text("Filter by Category") },
                     modifier = Modifier
@@ -108,7 +107,6 @@ fun ExpenseListScreen(
                     readOnly = true,
                     enabled = false
                 )
-
                 DropdownMenu(
                     expanded = categoryExpanded,
                     onDismissRequest = { categoryExpanded = false }
@@ -121,15 +119,14 @@ fun ExpenseListScreen(
                     }) {
                         Text("All Categories")
                     }
-
                     categories.forEach { category ->
                         DropdownMenuItem(onClick = {
                             selectedCategory.value = category
                             expenses.clear()
-                            expenses.addAll(allExpenses.filter { it.category == category.name })
+                            expenses.addAll(allExpenses.filter { it.category == category })
                             categoryExpanded = false
                         }) {
-                            Text(category.name)
+                            Text(category)
                         }
                     }
                 }
@@ -145,25 +142,22 @@ fun ExpenseListScreen(
                 Text(if (endDate.isBlank()) "Select End Date" else "End Date: $endDate")
             }
 
-            Divider(modifier = Modifier.padding(vertical = 16.dp))
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Button(
                 onClick = {
                     scope.launch(Dispatchers.IO) {
                         val filtered = allExpenses.filter { expense ->
-                            val matchCategory = selectedCategory.value?.name == null || expense.category == selectedCategory.value?.name
+                            val matchCategory = selectedCategory.value == null || expense.category == selectedCategory.value
                             val matchDate = try {
                                 val expenseDate = sdf.parse(expense.date)
-                                val fromDate = if (startDate.isNotBlank()) sdf.parse(startDate) else null
-                                val toDate = if (endDate.isNotBlank()) sdf.parse(endDate) else null
+                                val from = if (startDate.isNotBlank()) sdf.parse(startDate) else null
+                                val to = if (endDate.isNotBlank()) sdf.parse(endDate) else null
 
                                 when {
-                                    fromDate != null && toDate != null -> expenseDate != null &&
-                                            (expenseDate.after(fromDate) || expenseDate == fromDate) &&
-                                            (expenseDate.before(toDate) || expenseDate == toDate)
-                                    fromDate != null -> expenseDate != null && (expenseDate.after(fromDate) || expenseDate == fromDate)
-                                    toDate != null -> expenseDate != null && (expenseDate.before(toDate) || expenseDate == toDate)
+                                    from != null && to != null -> expenseDate != null && (expenseDate >= from && expenseDate <= to)
+                                    from != null -> expenseDate != null && expenseDate >= from
+                                    to != null -> expenseDate != null && expenseDate <= to
                                     else -> true
                                 }
                             } catch (e: Exception) {
@@ -171,7 +165,6 @@ fun ExpenseListScreen(
                             }
                             matchCategory && matchDate
                         }
-
                         expenses.clear()
                         expenses.addAll(filtered)
                     }
@@ -189,9 +182,11 @@ fun ExpenseListScreen(
                     endDate = ""
                     selectedCategory.value = null
                     scope.launch(Dispatchers.IO) {
-                        val all = database.expenseDao().getAllExpenses()
+                        val refreshed = firestoreService.getAllExpensesForUser(userEmail)
+                        allExpenses.clear()
+                        allExpenses.addAll(refreshed)
                         expenses.clear()
-                        expenses.addAll(all)
+                        expenses.addAll(refreshed)
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -199,17 +194,13 @@ fun ExpenseListScreen(
                 Text("Reset Filters")
             }
 
-            Divider(modifier = Modifier.padding(vertical = 16.dp))
             Spacer(modifier = Modifier.height(8.dp))
-
             Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
                 Text("Add New Expense")
             }
 
-            Divider(modifier = Modifier.padding(vertical = 16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
         }
-
-        item { Text("Filtered Expenses", style = MaterialTheme.typography.subtitle1) }
 
         items(expenses) { expense ->
             Card(
@@ -230,18 +221,15 @@ fun ExpenseListScreen(
                     Text("Date: ${expense.date}")
 
                     expense.photoPath?.let { path ->
-                        val file = File(path)
-                        if (file.exists()) {
-                            Image(
-                                painter = rememberAsyncImagePainter(model = file),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(150.dp)
-                                    .padding(top = 8.dp)
-                                    .clickable { fullImagePath = path }
-                            )
-                        }
+                        Image(
+                            painter = rememberAsyncImagePainter(model = path),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(150.dp)
+                                .padding(top = 8.dp)
+                                .clickable { fullImagePath = path }
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -265,20 +253,6 @@ fun ExpenseListScreen(
                 Text("Back")
             }
         }
-    }
-
-    if (fullImagePath != null) {
-        AlertDialog(
-            onDismissRequest = { fullImagePath = null },
-            buttons = {},
-            text = {
-                Image(
-                    painter = rememberAsyncImagePainter(model = File(fullImagePath!!)),
-                    contentDescription = "Full Image",
-                    modifier = Modifier.fillMaxWidth().height(400.dp)
-                )
-            }
-        )
     }
 
     if (showEditDialog && selectedExpense != null) {
@@ -310,12 +284,12 @@ fun ExpenseListScreen(
                             amount = newAmount.toDoubleOrNull() ?: expense.amount
                         )
                         scope.launch(Dispatchers.IO) {
-                            database.expenseDao().updateExpense(updated)
-                            val updatedExpenses = database.expenseDao().getAllExpenses()
+                            firestoreService.updateExpense(updated)
+                            val refreshed = firestoreService.getAllExpensesForUser(userEmail)
                             allExpenses.clear()
-                            allExpenses.addAll(updatedExpenses)
+                            allExpenses.addAll(refreshed)
                             expenses.clear()
-                            expenses.addAll(updatedExpenses)
+                            expenses.addAll(refreshed)
                         }
                         showEditDialog = false
                     }
@@ -339,12 +313,12 @@ fun ExpenseListScreen(
             confirmButton = {
                 Button(onClick = {
                     scope.launch(Dispatchers.IO) {
-                        database.expenseDao().deleteExpense(expenseToDelete!!)
-                        val updated = database.expenseDao().getAllExpenses()
+                        firestoreService.deleteExpense(expenseToDelete!!.id)
+                        val refreshed = firestoreService.getAllExpensesForUser(userEmail)
                         allExpenses.clear()
-                        allExpenses.addAll(updated)
+                        allExpenses.addAll(refreshed)
                         expenses.clear()
-                        expenses.addAll(updated)
+                        expenses.addAll(refreshed)
                     }
                     showDeleteConfirm = false
                 }) {
@@ -358,4 +332,21 @@ fun ExpenseListScreen(
             }
         )
     }
+
+    if (fullImagePath != null) {
+        AlertDialog(
+            onDismissRequest = { fullImagePath = null },
+            buttons = {},
+            text = {
+                Image(
+                    painter = rememberAsyncImagePainter(model = fullImagePath!!),
+                    contentDescription = "Full Image",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(400.dp)
+                )
+            }
+        )
+    }
 }
+

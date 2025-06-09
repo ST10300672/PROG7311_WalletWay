@@ -5,25 +5,27 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.*
 
 @Composable
 fun CategoryScreen(
-    database: AppDatabase,
+    userEmail: String,
     onBack: () -> Unit
 ) {
     var categoryName by remember { mutableStateOf("") }
     val categories = remember { mutableStateListOf<CategoryEntity>() }
     val scope = rememberCoroutineScope()
+    val categoryService = remember { FirestoreCategoryService() }
 
-    LaunchedEffect(Unit) {
-        val dbCategories = database.categoryDao().getAllCategories()
+    // Load categories from Firestore on screen launch
+    LaunchedEffect(true) {
+        val fetched = categoryService.getCategoriesForUser(userEmail)
         categories.clear()
-        categories.addAll(dbCategories)
+        categories.addAll(fetched)
     }
 
     Column(
@@ -43,14 +45,20 @@ fun CategoryScreen(
 
         Button(
             onClick = {
-                val newCategory = CategoryEntity(name = categoryName)
-                scope.launch(Dispatchers.IO) {
-                    database.categoryDao().insertCategory(newCategory)
-                    val updatedCategories = database.categoryDao().getAllCategories()
-                    categories.clear()
-                    categories.addAll(updatedCategories)
+                if (categoryName.isNotBlank()) {
+                    val newCategory = CategoryEntity(
+                        id = UUID.randomUUID().toString(),
+                        name = categoryName,
+                        userEmail = userEmail
+                    )
+                    scope.launch(Dispatchers.IO) {
+                        categoryService.addCategory(newCategory)
+                        val updated = categoryService.getCategoriesForUser(userEmail)
+                        categories.clear()
+                        categories.addAll(updated)
+                    }
+                    categoryName = ""
                 }
-                categoryName = ""
             },
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -79,8 +87,8 @@ fun CategoryScreen(
                         Button(
                             onClick = {
                                 scope.launch(Dispatchers.IO) {
-                                    database.categoryDao().deleteCategory(category)
-                                    val updated = database.categoryDao().getAllCategories()
+                                    categoryService.deleteCategory(category.id)
+                                    val updated = categoryService.getCategoriesForUser(userEmail)
                                     categories.clear()
                                     categories.addAll(updated)
                                 }
